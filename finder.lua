@@ -37,12 +37,13 @@ local COPY_TEXT = "Saluran WA"
 local POST_URL = "https://privatedontleakorelsejejjkeo3333.lovable.app/api/addPet"
 local AUTO_POST = true
 local POST_MIN_VALUE = 50000000
-local POST_SCAN_INTERVAL = 8
+local POST_SCAN_INTERVAL = 4 -- scan lebih sering
 local POST_COOLDOWN = 300
+local POST_CONFIRM = true -- pet baru dipost setelah terlihat di 2 scan berturut-turut (anti salah baca)
 local POST_FIRST_DELAY = 6 -- scan pertama ditunda supaya UI muncul mulus dulu
 
 local W_START, H_START = 480, 380
-local W_MIN, W_MAX, H_MIN, H_MAX = 380, 720, 300, 520
+local W_MIN, W_MAX, H_MIN, H_MAX = 380, 720, 260, 520
 
 -- ─── PALETTE (hitam + biru) ────────────────────────────────────────────────
 local WHITE       = Color3.fromRGB(255, 255, 255)
@@ -286,6 +287,7 @@ loadBlacklist()
 -- ─── ASSET CACHE (di latar belakang, tidak menahan UI) ─────────────────────
 local rarityByName, colorByName = {}, {}
 local displayByName, iconByName = {}, {}
+local assetsReady = false
 
 local function findIcon(e)
 	for _, k in ipairs({ "Icon", "IconId", "Image", "ImageId", "Thumbnail" }) do
@@ -328,6 +330,7 @@ task.spawn(function()
 	if not ok then
 		warn("[Leon-finder] Assets load failed (fallback):", err)
 	end
+	assetsReady = true
 end)
 
 local function getRarity(petName)
@@ -1155,35 +1158,91 @@ local function fetchPets()
 end
 
 local postedAt = {}
+local prevSeen = {}
 local postOk, postFail, scanCount, lastPostStatus = 0, 0, 0, "-"
 local postPauseUntil = 0
 
-local VALUE_PATTERN = "^%s*%$?%s*([%d%.,]+)%s*([KkMmBbTt]?)%s*/%s*[sS]%s*$"
-local UNIT_MUL = { K = 1e3, M = 1e6, B = 1e9, T = 1e12 }
+local UNIT_MUL = { K = 1e3, M = 1e6, B = 1e9, T = 1e12, QA = 1e15, QI = 1e18 }
 
 local function parseValue(text)
-	local clean = tostring(text):gsub("<[^>]+>", "")
-	local num, unit = clean:match(VALUE_PATTERN)
+	local clean = tostring(text):gsub("<[^>]+>", ""):gsub("%s+", " ")
+	local num, unit = clean:match("^%s*%$?%s*([%d%.,]+)%s*(%a*)%s*/%s*[sS]%s*$")
 	if not num then return nil end
 	local n = tonumber((num:gsub(",", "")))
 	if not n then return nil end
-	return n * (UNIT_MUL[unit:upper()] or 1)
+	local mul = 1
+	if unit ~= "" then
+		mul = UNIT_MUL[unit:upper()]
+		if not mul then return nil end
+	end
+	return n * mul
+end
+
+-- bulatkan ke 4 angka penting (nilai di layar dibulatkan, jadi pet yang sama selalu satu kunci)
+local function roundedValue(v)
+	if v <= 0 then return 0 end
+	local f = 10 ^ (math.floor(math.log10(v)) - 3)
+	return math.floor(v / f + 0.5) * f
+end
+
+local function normKey(s)
+	return (tostring(s):lower():gsub("[^%w]", ""))
+end
+
+local nameLookup, lookupSize = {}, 0
+local function ensureLookup()
+	local count = 0
+	for _ in pairs(displayByName) do count += 1 end
+	if count == lookupSize then return end
+	lookupSize = count
+	table.clear(nameLookup)
+	for k in pairs(displayByName) do
+		nameLookup[normKey(k)] = k
+	end
+end
+
+local function matchName(s)
+	if s == nil then return nil end
+	local t = tostring(s):gsub("<[^>]+>", "")
+	t = t:match("^%s*(.-)%s*$")
+	if t == "" then return nil end
+	if displayByName[t] then return t end
+	return nameLookup[normKey(t)]
+end
+
+-- label harus benar-benar tampil (bukan template/sembunyi)
+local function isShown(lbl)
+	if not lbl.Visible or lbl.TextTransparency >= 1 then return false end
+	local cur = lbl.Parent
+	for _ = 1, 10 do
+		if not cur or cur == workspace then break end
+		if (cur:IsA("BillboardGui") or cur:IsA("SurfaceGui")) and not cur.Enabled then
+			return false
+		end
+		if cur:IsA("GuiObject") and not cur.Visible then
+			return false
+		end
+		cur = cur.Parent
+	end
+	return true
 end
 
 local function resolveName(inst)
 	local cur = inst.Parent
-	for _ = 1, 8 do
+	for depth = 1, 10 do
 		if not cur or cur == workspace then return nil end
-		local key = displayByName[cur.Name] and cur.Name or nil
+		local key = matchName(cur.Name)
 		if not key then
+			for _, attr in ipairs({ "PetName", "DisplayName", "Name", "Pet" }) do
+				key = matchName(cur:GetAttribute(attr))
+				if key then break end
+			end
+		end
+		if not key and depth <= 4 then
 			for _, ch in ipairs(cur:GetChildren()) do
-				if ch:IsA("TextLabel") then
-					local t = tostring(ch.Text):gsub("<[^>]+>", "")
-					t = t:match("^%s*(.-)%s*$")
-					if displayByName[t] then
-						key = t
-						break
-					end
+				if ch ~= inst and (ch:IsA("TextLabel") or ch:IsA("StringValue")) then
+					key = matchName(ch:IsA("TextLabel") and ch.Text or ch.Value)
+					if key then break end
 				end
 			end
 		end
@@ -1196,16 +1255,17 @@ local function resolveName(inst)
 end
 
 local function scanPets()
+	ensureLookup()
 	local found, seen, n = {}, {}, 0
 	for _, d in ipairs(workspace:GetDescendants()) do
 		n += 1
 		if n % 3000 == 0 then task.wait() end
-		if d:IsA("TextLabel") then
+		if d.Parent and d:IsA("TextLabel") and isShown(d) then
 			local value = parseValue(d.Text)
 			if value and value >= POST_MIN_VALUE then
 				local name, icon = resolveName(d)
 				if name then
-					local k = name .. "|" .. math.floor(value)
+					local k = name .. "|" .. ("%.0f"):format(roundedValue(value))
 					if not seen[k] then
 						seen[k] = true
 						table.insert(found, { name = name, value = value, icon = icon })
@@ -1274,14 +1334,19 @@ task.spawn(function()
 	while gui.Parent do
 		if not AUTO_POST or game.JobId == "" then
 			postLabel.Text = "Post: off"
+		elseif not assetsReady then
+			postLabel.Text = "Scan: tunggu aset..."
 		elseif os.clock() >= postPauseUntil then
 			local ok, found = pcall(scanPets)
 			if ok then
 				scanCount = #found
+				local seenNow = {}
 				for _, pet in ipairs(found) do
-					local key = game.JobId .. "|" .. pet.name .. "|" .. math.floor(pet.value)
+					local key = game.JobId .. "|" .. pet.name .. "|" .. ("%.0f"):format(roundedValue(pet.value))
+					seenNow[key] = true
+					local confirmed = (not POST_CONFIRM) or prevSeen[key]
 					local last = postedAt[key]
-					if (not last or os.clock() - last > POST_COOLDOWN) and not alreadyListed(pet.name, pet.value) then
+					if confirmed and (not last or os.clock() - last > POST_COOLDOWN) and not alreadyListed(pet.name, pet.value) then
 						postedAt[key] = os.clock()
 						local body = HttpService:JSONEncode({
 							petName = pet.name,
@@ -1305,6 +1370,7 @@ task.spawn(function()
 						task.wait(0.5)
 					end
 				end
+				prevSeen = seenNow
 			else
 				warn("[" .. TITLE .. "] Scan gagal:", found)
 			end
