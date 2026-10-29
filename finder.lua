@@ -31,8 +31,8 @@ local MAX_ITEMS = 300
 local DEFAULT_RARITY = "Secret"
 local FORCE_INTERVAL = 3
 local TITLE = "Leon-finder"
-local AUTHOR = "Sources Hub Team"
-local DISCORD_LINK = "https://discord.gg/REbuVnr4qt"
+local WA_LINK = "https://whatsapp.com/channel/ISI_LINK_SALURAN_WA_KAMU" -- GANTI dengan link saluran WA kamu
+local COPY_TEXT = "Saluran WA"
 
 local POST_URL = "https://privatedontleakorelsejejjkeo3333.lovable.app/api/addPet"
 local AUTO_POST = true
@@ -386,45 +386,39 @@ do
 	end)
 end
 
--- ─── SIDEBAR ───────────────────────────────────────────────────────────────
+-- ─── SIDEBAR (panel membulat + garis tepi, senada dengan panel kanan) ──────
 local sidebar = new("Frame", {
 	Name = "Sidebar",
-	Size = UDim2.new(0, 140, 1, 0),
+	Position = UDim2.fromOffset(12, 12),
+	Size = UDim2.new(0, 128, 1, -24),
 	BackgroundColor3 = BG_PANEL,
 	BorderSizePixel = 0,
 }, main)
-
-local divider = new("Frame", {
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, 0, 0, 0),
-	Size = UDim2.new(0, 1, 1, 0),
-	BackgroundColor3 = WHITE,
-	BorderSizePixel = 0,
-}, sidebar)
-gradient(divider, ACCENT_HI, ACCENT_DARK, 90)
+corner(sidebar, 10)
+stroke(sidebar, ACCENT, 1, 0.55)
 
 local titleLabel = label(sidebar, TITLE, 15, FONT_BOLD, WHITE,
-	UDim2.fromOffset(12, 12), UDim2.fromOffset(120, 22))
+	UDim2.fromOffset(10, 10), UDim2.fromOffset(108, 22))
 gradient(titleLabel, WHITE, ACCENT_HI, 0)
 
 new("Frame", {
-	Position = UDim2.fromOffset(13, 44),
+	Position = UDim2.fromOffset(11, 41),
 	Size = UDim2.fromOffset(6, 6),
 	BackgroundColor3 = ACCENT_HI,
 	BorderSizePixel = 0,
 }, sidebar)
 local statusLabel = label(sidebar, "Memuat data...", 9, FONT_MED, SUB_TEXT,
-	UDim2.fromOffset(25, 39), UDim2.fromOffset(108, 16))
+	UDim2.fromOffset(23, 36), UDim2.fromOffset(97, 16))
 statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
--- kolom tombol: tersusun otomatis, jarak sama
+-- kolom kontrol: toggle + tombol, tersusun otomatis dengan jarak sama
 local btnCol = new("Frame", {
-	Position = UDim2.fromOffset(8, 64),
-	Size = UDim2.new(1, -16, 0, 4 * 30 + 3 * 8),
+	Position = UDim2.fromOffset(8, 60),
+	Size = UDim2.new(1, -16, 0, 2 * 34 + 2 * 30 + 3 * 6),
 	BackgroundTransparency = 1,
 }, sidebar)
 new("UIListLayout", {
-	Padding = UDim.new(0, 8),
+	Padding = UDim.new(0, 6),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, btnCol)
 
@@ -442,19 +436,13 @@ local function sideButton(text, order, style)
 	return button(btnCol, o)
 end
 
-local blModeBtn = sideButton("Blacklist", 1, PRIMARY)
-local unblBtn = sideButton("Unblacklist", 2, SECOND)
-local COPY_TEXT = "Copy Discord"
-local copyBtn = sideButton(COPY_TEXT, 3, SECOND)
-local hideBtn = sideButton("Hide", 4, SECOND)
+local blModeBtn = sideButton("Blacklist", 3, PRIMARY)
+local unblBtn = sideButton("Unblacklist", 4, SECOND)
 
 -- info bawah sidebar (menempel ke bawah, ikut saat UI di-resize)
 local postLabel = label(sidebar, "Scan:0 Post:0", 8, FONT_MED, MUTED,
-	UDim2.new(0, 12, 1, -22), UDim2.fromOffset(120, 14))
+	UDim2.new(0, 10, 1, -24), UDim2.fromOffset(108, 14))
 postLabel.TextTruncate = Enum.TextTruncate.AtEnd
-local authorLabel = label(sidebar, "Author: " .. AUTHOR, 9, FONT_BOLD, SUB_TEXT,
-	UDim2.new(0, 12, 1, -40), UDim2.fromOffset(120, 16))
-authorLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
 -- ─── CONTENT ───────────────────────────────────────────────────────────────
 local content = new("Frame", {
@@ -463,7 +451,7 @@ local content = new("Frame", {
 	Size = UDim2.new(1, -148, 1, 0),
 	BackgroundTransparency = 1,
 }, main)
--- area dalam dengan margin kanan 12 supaya semua elemen sejajar
+-- area dalam: margin atas/bawah/kanan 12, sama dengan sidebar
 local inner = new("Frame", {
 	Name = "Inner",
 	Position = UDim2.fromOffset(0, 12),
@@ -471,22 +459,52 @@ local inner = new("Frame", {
 	BackgroundTransparency = 1,
 }, content)
 
--- ─── BLACKLIST PANEL ───────────────────────────────────────────────────────
+-- ─── HEADER KANAN ATAS: [Saluran WA] [X] ───────────────────────────────────
+local hideBtn = button(inner, {
+	text = "X",
+	textSize = 24,
+	textColor = WHITE,
+	anchor = Vector2.new(1, 0),
+	pos = UDim2.new(1, 0, 0, 0),
+	size = UDim2.fromOffset(46, 38),
+	c0 = Color3.fromRGB(20, 40, 90),
+	c1 = Color3.fromRGB(8, 14, 30),
+	strokeColor = ACCENT_HI,
+	strokeTransparency = 0.1,
+	radius = 9,
+})
+local copyBtn = button(inner, {
+	text = COPY_TEXT,
+	textSize = 11,
+	anchor = Vector2.new(1, 0),
+	pos = UDim2.new(1, -54, 0, 0),
+	size = UDim2.fromOffset(124, 38),
+	c0 = Color3.fromRGB(37, 180, 95),
+	c1 = Color3.fromRGB(14, 100, 55),
+	strokeColor = Color3.fromRGB(110, 240, 160),
+	strokeTransparency = 0.25,
+	radius = 9,
+})
+
+-- ─── BLACKLIST PANEL (di bawah header supaya WA & X tetap terlihat) ────────
 local blPanel = new("Frame", {
 	Name = "BlacklistPanel",
-	Position = UDim2.fromOffset(148, 0),
-	Size = UDim2.new(1, -148, 1, 0),
+	Position = UDim2.fromOffset(148, 62),
+	Size = UDim2.new(1, -160, 1, -74),
 	BackgroundColor3 = BG_BLACK,
+	BorderSizePixel = 0,
 	Visible = false,
 	ZIndex = 20,
 }, main)
+corner(blPanel, 10)
+stroke(blPanel, ACCENT, 1, 0.45)
 label(blPanel, "BLACKLISTED PETS", 12, FONT_BOLD, ACCENT_HI,
-	UDim2.fromOffset(12, 10), UDim2.new(1, -90, 0, 24)).ZIndex = 21
+	UDim2.fromOffset(12, 8), UDim2.new(1, -90, 0, 24)).ZIndex = 21
 local blClose = button(blPanel, {
 	text = "Close",
 	textSize = 10,
 	anchor = Vector2.new(1, 0),
-	pos = UDim2.new(1, -12, 0, 9),
+	pos = UDim2.new(1, -8, 0, 7),
 	size = UDim2.fromOffset(60, 26),
 	c0 = ACCENT_DARK,
 	c1 = ACCENT_DEEP,
@@ -495,8 +513,8 @@ local blClose = button(blPanel, {
 })
 blClose.ZIndex = 22
 local blScroll = new("ScrollingFrame", {
-	Position = UDim2.fromOffset(12, 44),
-	Size = UDim2.new(1, -24, 1, -56),
+	Position = UDim2.fromOffset(10, 40),
+	Size = UDim2.new(1, -20, 1, -50),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 4,
@@ -558,7 +576,7 @@ local function refreshBlacklistPanel()
 	end
 end
 
--- ─── SHOW / HIDE ───────────────────────────────────────────────────────────
+-- ─── SHOW / HIDE (tombol X menyembunyikan, tombol kecil di atas menampilkan) ─
 local showBtn, showBg = button(gui, {
 	text = TITLE,
 	textSize = 12,
@@ -582,49 +600,49 @@ showBtn.MouseButton1Click:Connect(function()
 	showBg.Visible = false
 end)
 
--- ─── TOGGLE ROW ────────────────────────────────────────────────────────────
+-- ─── TOGGLE (di sidebar kiri) ──────────────────────────────────────────────
 local TRACK_OFF = Color3.fromRGB(30, 36, 50)
-local function toggleCard(text, side, onChanged)
+local function toggleCard(text, order, onChanged)
 	local card = new("Frame", {
-		Position = side == 0 and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 4, 0, 0),
-		Size = UDim2.new(0.5, -4, 0, 40),
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundColor3 = WHITE,
 		BorderSizePixel = 0,
-	}, inner)
-	corner(card, 8)
+	}, btnCol)
+	corner(card, 7)
 	gradient(card, Color3.fromRGB(14, 22, 42), Color3.fromRGB(6, 9, 16), 0)
-	accentStroke(card, 1, 0.25)
+	accentStroke(card, 1, 0.3)
 
-	label(card, text, 11, FONT_BOLD, WHITE,
-		UDim2.fromOffset(10, 0), UDim2.new(1, -62, 1, 0))
+	label(card, text, 10, FONT_BOLD, WHITE,
+		UDim2.fromOffset(8, 0), UDim2.new(1, -50, 1, 0))
 
 	local track = new("TextButton", {
 		AutoButtonColor = false,
 		Text = "",
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.fromOffset(42, 22),
+		Position = UDim2.new(1, -6, 0.5, 0),
+		Size = UDim2.fromOffset(34, 18),
 		BackgroundColor3 = TRACK_OFF,
 		BorderSizePixel = 0,
 	}, card)
-	corner(track, 11)
+	corner(track, 9)
 	stroke(track, ACCENT_DARK, 1, 0.25)
 
 	local knob = new("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 3, 0.5, 0),
-		Size = UDim2.fromOffset(16, 16),
+		Size = UDim2.fromOffset(12, 12),
 		BackgroundColor3 = WHITE,
 		BorderSizePixel = 0,
 	}, track)
-	corner(knob, 8)
+	corner(knob, 6)
 
 	local state = false
 	local info = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	track.MouseButton1Click:Connect(function()
 		state = not state
 		TweenService:Create(knob, info, {
-			Position = state and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+			Position = state and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
 		}):Play()
 		TweenService:Create(track, info, {
 			BackgroundColor3 = state and ACCENT or TRACK_OFF,
@@ -638,11 +656,11 @@ local autoJoinState, autoForceState = false, false
 local lastAutoJoinJob = nil
 local forceKey, forceJobId, forceRun = nil, nil, 0
 
-toggleCard("Auto-Join", 0, function(v)
+toggleCard("Auto-Join", 1, function(v)
 	autoJoinState = v
 	render()
 end)
-toggleCard("Auto-Force", 1, function(v)
+toggleCard("Auto-Force", 2, function(v)
 	autoForceState = v
 	if not v then stopForce() end
 	render()
@@ -650,13 +668,13 @@ end)
 
 -- ─── LIVE FEED HEADER ──────────────────────────────────────────────────────
 label(inner, "LIVE FEED", 10, FONT_BOLD, ACCENT_HI,
-	UDim2.fromOffset(2, 50), UDim2.fromOffset(90, 20))
+	UDim2.fromOffset(2, 46), UDim2.fromOffset(90, 20))
 
 local clearBtn = button(inner, {
 	text = "Clear",
 	textSize = 9,
 	anchor = Vector2.new(1, 0),
-	pos = UDim2.new(1, 0, 0, 50),
+	pos = UDim2.new(1, 0, 0, 46),
 	size = UDim2.fromOffset(48, 20),
 	c0 = ACCENT_DARK,
 	c1 = ACCENT_DEEP,
@@ -667,12 +685,12 @@ local clearBtn = button(inner, {
 })
 
 local detectedLabel = label(inner, "0 detected", 9, FONT_MED, MUTED,
-	UDim2.new(1, -56, 0, 50), UDim2.fromOffset(80, 20), Enum.TextXAlignment.Right)
+	UDim2.new(1, -56, 0, 46), UDim2.fromOffset(80, 20), Enum.TextXAlignment.Right)
 detectedLabel.AnchorPoint = Vector2.new(1, 0)
 
 local feedBox = new("Frame", {
-	Position = UDim2.fromOffset(0, 76),
-	Size = UDim2.new(1, 0, 1, -76),
+	Position = UDim2.fromOffset(0, 72),
+	Size = UDim2.new(1, 0, 1, -72),
 	BackgroundColor3 = BG_PANEL,
 	BorderSizePixel = 0,
 }, inner)
@@ -1089,10 +1107,10 @@ end)
 
 copyBtn.MouseButton1Click:Connect(function()
 	local fn = setclipboard or toclipboard
-	local ok = fn and pcall(fn, DISCORD_LINK)
-	copyBtn.Text = ok and "Copied!" or "Failed"
+	local ok = fn and pcall(fn, WA_LINK)
+	copyBtn.Text = ok and "Tersalin!" or "Gagal"
 	if not ok then
-		warn("[" .. TITLE .. "] Clipboard not supported. Link: " .. DISCORD_LINK)
+		warn("[" .. TITLE .. "] Clipboard not supported. Link: " .. WA_LINK)
 	end
 	task.delay(1.4, function()
 		if copyBtn.Parent then
