@@ -1,4 +1,6 @@
--- language: Lua, file: LeonFinder.lua, target: Roblox executor (Synapse/Fluxus/etc), game: pet finder / join hub
+-- Leon-finder  |  LeonFinder.lua  |  Roblox executor
+-- UI: hitam + biru | 480x380 | loading instan | resize di kanan bawah
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,6 +18,12 @@ if not playerGui then
 	return
 end
 
+-- hapus UI lama kalau script dijalankan ulang
+do
+	local old = playerGui:FindFirstChild("LeonFinder")
+	if old then old:Destroy() end
+end
+
 -- ─── CONFIG ───────────────────────────────────────────────────────────────
 local API_URL = "https://privatedontleakorelsejejjkeo3333.lovable.app/api/getPets"
 local REFRESH_INTERVAL = 1
@@ -31,107 +39,12 @@ local AUTO_POST = true
 local POST_MIN_VALUE = 50000000
 local POST_SCAN_INTERVAL = 8
 local POST_COOLDOWN = 300
+local POST_FIRST_DELAY = 6 -- scan pertama ditunda supaya UI muncul mulus dulu
 
 local W_START, H_START = 480, 380
-local W_MIN, W_MAX, H_MIN, H_MAX = 360, 720, 280, 520
+local W_MIN, W_MAX, H_MIN, H_MAX = 380, 720, 300, 520
 
--- ─── BLACKLIST ─────────────────────────────────────────────────────────────
-local blacklist = {}
-local blacklistFile = "LeonFinder_Blacklist.json"
-local blacklistMode = false
-local showingBlacklistPanel = false
-
-local function loadBlacklist()
-	if isfile and readfile and isfile(blacklistFile) then
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(readfile(blacklistFile))
-		end)
-		if ok and type(data) == "table" then
-			for _, name in ipairs(data) do
-				if type(name) == "string" and name \~= "" then
-					blacklist[name] = true
-				end
-			end
-		end
-	end
-end
-
-local function saveBlacklist()
-	if not writefile then return end
-	local arr = {}
-	for name in pairs(blacklist) do
-		arr[#arr + 1] = name
-	end
-	table.sort(arr)
-	pcall(function()
-		writefile(blacklistFile, HttpService:JSONEncode(arr))
-	end)
-end
-
-local function isBlacklisted(e)
-	return e and e.name and blacklist[e.name] == true
-end
-
-loadBlacklist()
-
--- ─── ASSET CACHE (non-blocking) ────────────────────────────────────────────
-local rarityByName, colorByName = {}, {}
-local displayByName, iconByName = {}, {}
-
-local function findIcon(e)
-	for _, k in ipairs({ "Icon", "IconId", "Image", "ImageId", "Thumbnail" }) do
-		local v = e[k]
-		if v \~= nil then
-			local id = tostring(v):match("(%d%d%d%d%d+)")
-			if id then return id end
-		end
-	end
-	return nil
-end
-
-task.spawn(function()
-	local ok, err = pcall(function()
-		local dataFolder = ReplicatedStorage:WaitForChild("Data", 4)
-		if not dataFolder then error("Data folder missing") end
-		local assetsModule = dataFolder:WaitForChild("Assets", 4)
-		if not assetsModule then error("Assets module missing") end
-		local Assets = require(assetsModule)
-		if type(Assets) \~= "table" or type(Assets.Directory) \~= "table" then
-			error("Assets.Directory missing")
-		end
-		for id, e in pairs(Assets.Directory) do
-			if type(e) == "table" and type(e.Rarity) == "table" then
-				local r = e.Rarity.DisplayName or e.Rarity._id
-				local icon = findIcon(e)
-				rarityByName[id] = r
-				colorByName[id] = e.Rarity.Color
-				displayByName[id] = e.DisplayName or tostring(id)
-				iconByName[id] = icon
-				if e.DisplayName then
-					rarityByName[e.DisplayName] = r
-					colorByName[e.DisplayName] = e.Rarity.Color
-					displayByName[e.DisplayName] = e.DisplayName
-					iconByName[e.DisplayName] = icon
-				end
-			end
-		end
-	end)
-	if not ok then
-		warn("[Leon-finder] Assets load failed (fallback):", err)
-	end
-end)
-
-local function getRarity(petName)
-	return rarityByName[petName]
-end
-
-local function getRarityColor(petName)
-	local c = colorByName[petName]
-	if typeof(c) == "Color3" then return c end
-	return nil
-end
-
--- ─── PALETTE (black + blue) ────────────────────────────────────────────────
+-- ─── PALETTE (hitam + biru) ────────────────────────────────────────────────
 local WHITE       = Color3.fromRGB(255, 255, 255)
 local ACCENT_HI   = Color3.fromRGB(90, 170, 255)
 local ACCENT      = Color3.fromRGB(40, 120, 255)
@@ -139,8 +52,8 @@ local ACCENT_DARK = Color3.fromRGB(20, 55, 130)
 local ACCENT_DEEP = Color3.fromRGB(10, 25, 60)
 local SUB_TEXT    = Color3.fromRGB(160, 180, 210)
 local MUTED       = Color3.fromRGB(100, 120, 150)
-local BG_BLACK    = Color3.fromRGB(6, 8, 12)
-local BG_PANEL    = Color3.fromRGB(12, 14, 20)
+local BG_BLACK    = Color3.fromRGB(0, 0, 0)
+local BG_PANEL    = Color3.fromRGB(6, 8, 13)
 
 local FONT_BOLD = Enum.Font.GothamBold
 local FONT_MED  = Enum.Font.GothamMedium
@@ -198,8 +111,9 @@ end
 local function button(parent, o)
 	local bg = new("Frame", {
 		AnchorPoint = o.anchor or Vector2.new(0, 0),
-		Position = o.pos,
+		Position = o.pos or UDim2.new(),
 		Size = o.size,
+		LayoutOrder = o.order or 0,
 		BackgroundColor3 = WHITE,
 		BackgroundTransparency = o.bgTransparency or 0,
 		BorderSizePixel = 0,
@@ -264,68 +178,196 @@ local function httpGet(url)
 	return nil
 end
 
--- ─── GUI ROOT ──────────────────────────────────────────────────────────────
+-- ─── GUI ROOT + LOADING (tampil PALING AWAL, sebelum apa pun yang berat) ───
 local gui = new("ScreenGui", {
 	Name = "LeonFinder",
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	IgnoreGuiInset = true,
+	DisplayOrder = 50,
 }, playerGui)
 
--- Loading overlay (shows immediately)
-local loading = new("Frame", {
+local loading = new("CanvasGroup", {
 	Name = "Loading",
 	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-	BackgroundTransparency = 0.35,
+	BackgroundColor3 = BG_BLACK,
+	BackgroundTransparency = 0.25,
+	GroupTransparency = 0,
 	ZIndex = 100,
 }, gui)
 local loadCard = new("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(220, 70),
+	Size = UDim2.fromOffset(260, 92),
 	BackgroundColor3 = BG_BLACK,
 	BorderSizePixel = 0,
 	ZIndex = 101,
 }, loading)
 corner(loadCard, 12)
 accentStroke(loadCard, 1.4, 0)
-label(loadCard, "Leon-finder", 16, FONT_BOLD, ACCENT_HI,
+local loadTitle = label(loadCard, TITLE, 16, FONT_BOLD, ACCENT_HI,
 	UDim2.fromOffset(0, 10), UDim2.new(1, 0, 0, 24), Enum.TextXAlignment.Center)
-local loadStatus = label(loadCard, "Loading UI...", 11, FONT_MED, SUB_TEXT,
-	UDim2.fromOffset(0, 36), UDim2.new(1, 0, 0, 20), Enum.TextXAlignment.Center)
+loadTitle.ZIndex = 102
+local loadStatus = label(loadCard, "Memulai...", 11, FONT_MED, SUB_TEXT,
+	UDim2.fromOffset(0, 36), UDim2.new(1, 0, 0, 18), Enum.TextXAlignment.Center)
+loadStatus.ZIndex = 102
+local loadTrack = new("Frame", {
+	Position = UDim2.new(0, 20, 1, -22),
+	Size = UDim2.new(1, -40, 0, 6),
+	BackgroundColor3 = ACCENT_DEEP,
+	BorderSizePixel = 0,
+	ZIndex = 102,
+}, loadCard)
+corner(loadTrack, 3)
+local loadFill = new("Frame", {
+	Size = UDim2.new(0, 0, 1, 0),
+	BackgroundColor3 = ACCENT_HI,
+	BorderSizePixel = 0,
+	ZIndex = 103,
+}, loadTrack)
+corner(loadFill, 3)
+local loadPct = label(loadCard, "0%", 9, FONT_BOLD, WHITE,
+	UDim2.new(0, 20, 1, -38), UDim2.new(1, -40, 0, 12), Enum.TextXAlignment.Right)
+loadPct.ZIndex = 102
 
+local function setProgress(p, text)
+	loadStatus.Text = text
+	loadPct.Text = math.floor(p * 100) .. "%"
+	TweenService:Create(loadFill, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+		Size = UDim2.new(p, 0, 1, 0),
+	}):Play()
+	task.wait() -- beri 1 frame supaya loading benar-benar tergambar
+end
+
+setProgress(0.15, "Memuat pengaturan...")
+
+-- shared state (dideklarasikan di atas supaya semua fungsi bisa memakainya)
+local render, startForce, stopForce
+
+-- ─── BLACKLIST ─────────────────────────────────────────────────────────────
+local blacklist = {}
+local blacklistFile = "LeonFinder_Blacklist.json"
+local blacklistMode = false
+local showingBlacklistPanel = false
+
+local function loadBlacklist()
+	if isfile and readfile and isfile(blacklistFile) then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(readfile(blacklistFile))
+		end)
+		if ok and type(data) == "table" then
+			for _, name in ipairs(data) do
+				if type(name) == "string" and name ~= "" then
+					blacklist[name] = true
+				end
+			end
+		end
+	end
+end
+
+local function saveBlacklist()
+	if not writefile then return end
+	local arr = {}
+	for name in pairs(blacklist) do
+		arr[#arr + 1] = name
+	end
+	table.sort(arr)
+	pcall(function()
+		writefile(blacklistFile, HttpService:JSONEncode(arr))
+	end)
+end
+
+local function isBlacklisted(e)
+	return e and e.name and blacklist[e.name] == true
+end
+
+loadBlacklist()
+
+-- ─── ASSET CACHE (di latar belakang, tidak menahan UI) ─────────────────────
+local rarityByName, colorByName = {}, {}
+local displayByName, iconByName = {}, {}
+
+local function findIcon(e)
+	for _, k in ipairs({ "Icon", "IconId", "Image", "ImageId", "Thumbnail" }) do
+		local v = e[k]
+		if v ~= nil then
+			local id = tostring(v):match("(%d%d%d%d%d+)")
+			if id then return id end
+		end
+	end
+	return nil
+end
+
+task.spawn(function()
+	local ok, err = pcall(function()
+		local dataFolder = ReplicatedStorage:WaitForChild("Data", 4)
+		if not dataFolder then error("Data folder missing") end
+		local assetsModule = dataFolder:WaitForChild("Assets", 4)
+		if not assetsModule then error("Assets module missing") end
+		local Assets = require(assetsModule)
+		if type(Assets) ~= "table" or type(Assets.Directory) ~= "table" then
+			error("Assets.Directory missing")
+		end
+		for id, e in pairs(Assets.Directory) do
+			if type(e) == "table" and type(e.Rarity) == "table" then
+				local r = e.Rarity.DisplayName or e.Rarity._id
+				local icon = findIcon(e)
+				rarityByName[id] = r
+				colorByName[id] = e.Rarity.Color
+				displayByName[id] = e.DisplayName or tostring(id)
+				iconByName[id] = icon
+				if e.DisplayName then
+					rarityByName[e.DisplayName] = r
+					colorByName[e.DisplayName] = e.Rarity.Color
+					displayByName[e.DisplayName] = e.DisplayName
+					iconByName[e.DisplayName] = icon
+				end
+			end
+		end
+	end)
+	if not ok then
+		warn("[Leon-finder] Assets load failed (fallback):", err)
+	end
+end)
+
+local function getRarity(petName)
+	return rarityByName[petName]
+end
+
+local function getRarityColor(petName)
+	local c = colorByName[petName]
+	if typeof(c) == "Color3" then return c end
+	return nil
+end
+
+setProgress(0.4, "Membangun tampilan...")
+
+-- ─── MAIN WINDOW ───────────────────────────────────────────────────────────
 local main = new("Frame", {
 	Name = "Main",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(W_START, H_START),
 	BackgroundColor3 = BG_BLACK,
-	BackgroundTransparency = 0,
 	BorderSizePixel = 0,
 	ClipsDescendants = true,
-	Visible = false,
+	Visible = true,
 }, gui)
 corner(main, 12)
 accentStroke(main, 1.5, 0)
-new("UIGradient", {
-	Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 12, 22)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(4, 6, 12)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(2, 3, 6)),
-	}),
-	Rotation = 40,
-}, main)
 
--- Drag main
+-- Drag: dari sidebar atau strip atas (bukan dari daftar feed, supaya scroll tidak bentrok)
 do
 	local dragging, dragStart, startPos
 	main.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = main.Position
+			local rel = Vector2.new(input.Position.X, input.Position.Y) - main.AbsolutePosition
+			if rel.X < 140 or rel.Y < 36 then
+				dragging = true
+				dragStart = input.Position
+				startPos = main.Position
+			end
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
@@ -349,10 +391,8 @@ local sidebar = new("Frame", {
 	Name = "Sidebar",
 	Size = UDim2.new(0, 140, 1, 0),
 	BackgroundColor3 = BG_PANEL,
-	BackgroundTransparency = 0,
 	BorderSizePixel = 0,
 }, main)
-gradient(sidebar, Color3.fromRGB(6, 8, 14), Color3.fromRGB(12, 20, 40), 90)
 
 local divider = new("Frame", {
 	AnchorPoint = Vector2.new(1, 0),
@@ -363,75 +403,73 @@ local divider = new("Frame", {
 }, sidebar)
 gradient(divider, ACCENT_HI, ACCENT_DARK, 90)
 
-local titleLabel = label(sidebar, TITLE, 14, FONT_BOLD, WHITE,
-	UDim2.fromOffset(10, 14), UDim2.fromOffset(120, 20))
+local titleLabel = label(sidebar, TITLE, 15, FONT_BOLD, WHITE,
+	UDim2.fromOffset(12, 12), UDim2.fromOffset(120, 22))
 gradient(titleLabel, WHITE, ACCENT_HI, 0)
 
 new("Frame", {
-	Position = UDim2.fromOffset(12, 42),
+	Position = UDim2.fromOffset(13, 44),
 	Size = UDim2.fromOffset(6, 6),
 	BackgroundColor3 = ACCENT_HI,
 	BorderSizePixel = 0,
 }, sidebar)
-local statusLabel = label(sidebar, "Connecting...", 9, FONT_MED, SUB_TEXT,
-	UDim2.fromOffset(24, 38), UDim2.fromOffset(100, 14))
+local statusLabel = label(sidebar, "Memuat data...", 9, FONT_MED, SUB_TEXT,
+	UDim2.fromOffset(25, 39), UDim2.fromOffset(108, 16))
+statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Buttons stacked clean
-local blModeBtn = button(sidebar, {
-	text = "Blacklist",
-	textSize = 10,
-	pos = UDim2.fromOffset(8, 62),
-	size = UDim2.fromOffset(124, 28),
-	c0 = ACCENT,
-	c1 = ACCENT_DARK,
-	strokeColor = ACCENT_HI,
-	strokeTransparency = 0.15,
-	radius = 7,
-})
+-- kolom tombol: tersusun otomatis, jarak sama
+local btnCol = new("Frame", {
+	Position = UDim2.fromOffset(8, 64),
+	Size = UDim2.new(1, -16, 0, 4 * 30 + 3 * 8),
+	BackgroundTransparency = 1,
+}, sidebar)
+new("UIListLayout", {
+	Padding = UDim.new(0, 8),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, btnCol)
 
-local unblBtn = button(sidebar, {
-	text = "Unblacklist",
-	textSize = 10,
-	pos = UDim2.fromOffset(8, 96),
-	size = UDim2.fromOffset(124, 28),
-	c0 = Color3.fromRGB(18, 28, 50),
-	c1 = Color3.fromRGB(10, 14, 24),
-	strokeColor = ACCENT,
-	strokeTransparency = 0.3,
-	radius = 7,
-})
+local PRIMARY = { c0 = ACCENT, c1 = ACCENT_DARK, strokeColor = ACCENT_HI, strokeTransparency = 0.15 }
+local SECOND = {
+	c0 = Color3.fromRGB(16, 26, 48), c1 = Color3.fromRGB(8, 12, 22),
+	strokeColor = ACCENT, strokeTransparency = 0.3,
+}
+local function sideButton(text, order, style)
+	local o = {
+		text = text, textSize = 10, order = order,
+		size = UDim2.new(1, 0, 0, 30), radius = 7,
+	}
+	for k, v in pairs(style) do o[k] = v end
+	return button(btnCol, o)
+end
 
-local authorLabel = label(sidebar, "Author: " .. AUTHOR, 9, FONT_BOLD, SUB_TEXT,
-	UDim2.fromOffset(10, 134), UDim2.fromOffset(120, 16))
-
+local blModeBtn = sideButton("Blacklist", 1, PRIMARY)
+local unblBtn = sideButton("Unblacklist", 2, SECOND)
 local COPY_TEXT = "Copy Discord"
-local copyBtn = button(sidebar, {
-	text = COPY_TEXT,
-	textSize = 10,
-	pos = UDim2.fromOffset(8, 156),
-	size = UDim2.fromOffset(124, 28),
-	c0 = Color3.fromRGB(18, 28, 50),
-	c1 = Color3.fromRGB(10, 14, 24),
-	strokeColor = ACCENT,
-	strokeTransparency = 0.3,
-	radius = 7,
-})
+local copyBtn = sideButton(COPY_TEXT, 3, SECOND)
+local hideBtn = sideButton("Hide", 4, SECOND)
 
+-- info bawah sidebar (menempel ke bawah, ikut saat UI di-resize)
 local postLabel = label(sidebar, "Scan:0 Post:0", 8, FONT_MED, MUTED,
-	UDim2.fromOffset(10, 192), UDim2.fromOffset(120, 14))
+	UDim2.new(0, 12, 1, -22), UDim2.fromOffset(120, 14))
 postLabel.TextTruncate = Enum.TextTruncate.AtEnd
+local authorLabel = label(sidebar, "Author: " .. AUTHOR, 9, FONT_BOLD, SUB_TEXT,
+	UDim2.new(0, 12, 1, -40), UDim2.fromOffset(120, 16))
+authorLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-local hideBtn = button(sidebar, {
-	text = "Hide",
-	textSize = 11,
-	pos = UDim2.fromOffset(8, 220),
-	size = UDim2.fromOffset(124, 30),
-	c0 = Color3.fromRGB(18, 28, 50),
-	c1 = Color3.fromRGB(10, 14, 24),
-	strokeColor = ACCENT,
-	strokeTransparency = 0.3,
-	radius = 8,
-})
+-- ─── CONTENT ───────────────────────────────────────────────────────────────
+local content = new("Frame", {
+	Name = "Content",
+	Position = UDim2.fromOffset(148, 0),
+	Size = UDim2.new(1, -148, 1, 0),
+	BackgroundTransparency = 1,
+}, main)
+-- area dalam dengan margin kanan 12 supaya semua elemen sejajar
+local inner = new("Frame", {
+	Name = "Inner",
+	Position = UDim2.fromOffset(0, 12),
+	Size = UDim2.new(1, -12, 1, -24),
+	BackgroundTransparency = 1,
+}, content)
 
 -- ─── BLACKLIST PANEL ───────────────────────────────────────────────────────
 local blPanel = new("Frame", {
@@ -439,27 +477,26 @@ local blPanel = new("Frame", {
 	Position = UDim2.fromOffset(148, 0),
 	Size = UDim2.new(1, -148, 1, 0),
 	BackgroundColor3 = BG_BLACK,
-	BackgroundTransparency = 0.02,
 	Visible = false,
 	ZIndex = 20,
 }, main)
-corner(blPanel, 8)
-local blPanelTitle = label(blPanel, "BLACKLISTED PETS", 12, FONT_BOLD, ACCENT_HI,
-	UDim2.fromOffset(12, 8), UDim2.new(1, -80, 0, 24))
+label(blPanel, "BLACKLISTED PETS", 12, FONT_BOLD, ACCENT_HI,
+	UDim2.fromOffset(12, 10), UDim2.new(1, -90, 0, 24)).ZIndex = 21
 local blClose = button(blPanel, {
 	text = "Close",
 	textSize = 10,
 	anchor = Vector2.new(1, 0),
-	pos = UDim2.new(1, -10, 0, 6),
+	pos = UDim2.new(1, -12, 0, 9),
 	size = UDim2.fromOffset(60, 26),
 	c0 = ACCENT_DARK,
 	c1 = ACCENT_DEEP,
 	strokeColor = ACCENT,
 	radius = 6,
 })
+blClose.ZIndex = 22
 local blScroll = new("ScrollingFrame", {
-	Position = UDim2.fromOffset(10, 40),
-	Size = UDim2.new(1, -20, 1, -50),
+	Position = UDim2.fromOffset(12, 44),
+	Size = UDim2.new(1, -24, 1, -56),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 4,
@@ -475,7 +512,7 @@ new("UIListLayout", {
 
 local function refreshBlacklistPanel()
 	for _, c in ipairs(blScroll:GetChildren()) do
-		if c:IsA("Frame") then c:Destroy() end
+		if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end
 	end
 	local names = {}
 	for name in pairs(blacklist) do
@@ -484,21 +521,21 @@ local function refreshBlacklistPanel()
 	table.sort(names)
 	if #names == 0 then
 		label(blScroll, "No blacklisted pets", 12, FONT_MED, MUTED,
-			UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 30))
+			UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 30)).ZIndex = 22
 		return
 	end
 	for _, name in ipairs(names) do
 		local row = new("Frame", {
+			Name = name,
 			Size = UDim2.new(1, -4, 0, 36),
 			BackgroundColor3 = WHITE,
-			BackgroundTransparency = 0.08,
 			BorderSizePixel = 0,
 			ZIndex = 22,
 		}, blScroll)
 		corner(row, 7)
-		gradient(row, Color3.fromRGB(20, 30, 55), Color3.fromRGB(10, 14, 24), 0)
+		gradient(row, Color3.fromRGB(18, 28, 50), Color3.fromRGB(8, 12, 22), 0)
 		label(row, name, 12, FONT_BOLD, WHITE,
-			UDim2.fromOffset(10, 0), UDim2.new(1, -90, 1, 0))
+			UDim2.fromOffset(10, 0), UDim2.new(1, -90, 1, 0)).ZIndex = 23
 		local ub = button(row, {
 			text = "Remove",
 			textSize = 9,
@@ -510,11 +547,11 @@ local function refreshBlacklistPanel()
 			strokeColor = ACCENT_HI,
 			radius = 5,
 		})
-		ub.ZIndex = 23
+		ub.ZIndex = 24
 		ub.MouseButton1Click:Connect(function()
 			blacklist[name] = nil
 			saveBlacklist()
-			statusLabel.Text = "Unblacklisted: " .. tostring(name):sub(1, 14)
+			statusLabel.Text = "Unblacklisted: " .. tostring(name):sub(1, 12)
 			refreshBlacklistPanel()
 			render()
 		end)
@@ -529,7 +566,7 @@ local showBtn, showBg = button(gui, {
 	pos = UDim2.new(0.5, 0, 0, 12),
 	size = UDim2.fromOffset(140, 28),
 	c0 = Color3.fromRGB(20, 40, 90),
-	c1 = Color3.fromRGB(8, 12, 24),
+	c1 = Color3.fromRGB(4, 8, 18),
 	strokeColor = ACCENT,
 	strokeTransparency = 0.2,
 	radius = 8,
@@ -545,29 +582,21 @@ showBtn.MouseButton1Click:Connect(function()
 	showBg.Visible = false
 end)
 
--- ─── CONTENT ───────────────────────────────────────────────────────────────
-local content = new("Frame", {
-	Name = "Content",
-	Position = UDim2.fromOffset(148, 0),
-	Size = UDim2.new(1, -148, 1, 0),
-	BackgroundTransparency = 1,
-}, main)
-
+-- ─── TOGGLE ROW ────────────────────────────────────────────────────────────
 local TRACK_OFF = Color3.fromRGB(30, 36, 50)
-local function toggleCard(text, x, onChanged)
+local function toggleCard(text, side, onChanged)
 	local card = new("Frame", {
-		Position = x == 0 and UDim2.new(0, 0, 0, 12) or UDim2.new(0.5, 4, 0, 12),
-		Size = x == 0 and UDim2.new(0.5, -4, 0, 40) or UDim2.new(0.5, -16, 0, 40),
+		Position = side == 0 and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 4, 0, 0),
+		Size = UDim2.new(0.5, -4, 0, 40),
 		BackgroundColor3 = WHITE,
-		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
-	}, content)
+	}, inner)
 	corner(card, 8)
-	gradient(card, Color3.fromRGB(16, 24, 45), Color3.fromRGB(8, 12, 22), 0)
+	gradient(card, Color3.fromRGB(14, 22, 42), Color3.fromRGB(6, 9, 16), 0)
 	accentStroke(card, 1, 0.25)
 
 	label(card, text, 11, FONT_BOLD, WHITE,
-		UDim2.fromOffset(10, 0), UDim2.new(1, -70, 1, 0))
+		UDim2.fromOffset(10, 0), UDim2.new(1, -62, 1, 0))
 
 	local track = new("TextButton", {
 		AutoButtonColor = false,
@@ -608,7 +637,6 @@ end
 local autoJoinState, autoForceState = false, false
 local lastAutoJoinJob = nil
 local forceKey, forceJobId, forceRun = nil, nil, 0
-local render, startForce, stopForce
 
 toggleCard("Auto-Join", 0, function(v)
 	autoJoinState = v
@@ -620,35 +648,35 @@ toggleCard("Auto-Force", 1, function(v)
 	render()
 end)
 
-label(content, "LIVE FEED", 9, FONT_BOLD, ACCENT_HI,
-	UDim2.fromOffset(2, 60), UDim2.fromOffset(90, 14))
+-- ─── LIVE FEED HEADER ──────────────────────────────────────────────────────
+label(inner, "LIVE FEED", 10, FONT_BOLD, ACCENT_HI,
+	UDim2.fromOffset(2, 50), UDim2.fromOffset(90, 20))
 
-local detectedLabel = label(content, "0 detected", 8, FONT_MED, MUTED,
-	UDim2.new(1, -90, 0, 60), UDim2.fromOffset(70, 14), Enum.TextXAlignment.Right)
-detectedLabel.AnchorPoint = Vector2.new(1, 0)
-
-local clearBtn = button(content, {
+local clearBtn = button(inner, {
 	text = "Clear",
 	textSize = 9,
 	anchor = Vector2.new(1, 0),
-	pos = UDim2.new(1, -12, 0, 56),
-	size = UDim2.fromOffset(44, 20),
+	pos = UDim2.new(1, 0, 0, 50),
+	size = UDim2.fromOffset(48, 20),
 	c0 = ACCENT_DARK,
 	c1 = ACCENT_DEEP,
 	strokeColor = ACCENT,
 	strokeThickness = 1,
 	strokeTransparency = 0.4,
+	radius = 6,
 })
 
+local detectedLabel = label(inner, "0 detected", 9, FONT_MED, MUTED,
+	UDim2.new(1, -56, 0, 50), UDim2.fromOffset(80, 20), Enum.TextXAlignment.Right)
+detectedLabel.AnchorPoint = Vector2.new(1, 0)
+
 local feedBox = new("Frame", {
-	Position = UDim2.fromOffset(0, 80),
-	Size = UDim2.new(1, -8, 1, -88),
-	BackgroundColor3 = WHITE,
-	BackgroundTransparency = 0.15,
+	Position = UDim2.fromOffset(0, 76),
+	Size = UDim2.new(1, 0, 1, -76),
+	BackgroundColor3 = BG_PANEL,
 	BorderSizePixel = 0,
-}, content)
+}, inner)
 corner(feedBox, 10)
-gradient(feedBox, Color3.fromRGB(8, 12, 22), Color3.fromRGB(4, 6, 12), 90)
 stroke(feedBox, ACCENT, 1, 0.55)
 
 local feed = new("ScrollingFrame", {
@@ -667,20 +695,23 @@ new("UIListLayout", {
 }, feed)
 new("UIPadding", { PaddingRight = UDim.new(0, 6) }, feed)
 
--- ─── RESIZE HANDLE (bottom-right) ──────────────────────────────────────────
-local resizeHandle = new("Frame", {
+-- ─── RESIZE HANDLE (kanan bawah, tarik untuk besar/kecil) ──────────────────
+local resizeHandle = new("TextButton", {
 	Name = "ResizeHandle",
+	AutoButtonColor = false,
 	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.new(1, -4, 1, -4),
-	Size = UDim2.fromOffset(18, 18),
+	Position = UDim2.new(1, -3, 1, -3),
+	Size = UDim2.fromOffset(26, 26),
 	BackgroundColor3 = ACCENT,
-	BackgroundTransparency = 0.25,
+	BackgroundTransparency = 0.2,
 	BorderSizePixel = 0,
+	Text = "◢",
+	TextSize = 14,
+	Font = FONT_BOLD,
+	TextColor3 = WHITE,
 	ZIndex = 30,
 }, main)
-corner(resizeHandle, 4)
-local resizeLabel = label(resizeHandle, "⤡", 12, FONT_BOLD, WHITE,
-	UDim2.fromScale(0, 0), UDim2.fromScale(1, 1), Enum.TextXAlignment.Center)
+corner(resizeHandle, 7)
 
 do
 	local resizing, startMouse, startSize
@@ -708,6 +739,8 @@ do
 		end
 	end)
 end
+
+setProgress(0.7, "Menyiapkan fitur...")
 
 -- ─── TELEPORT ──────────────────────────────────────────────────────────────
 TeleportService.TeleportInitFailed:Connect(function(_, result, errorMessage)
@@ -796,6 +829,7 @@ end
 
 -- ─── FEED RENDER ───────────────────────────────────────────────────────────
 local ageLabels = {}
+local feedState = "loading" -- "loading" | "ready" | "error"
 
 local function clearRows()
 	for _, c in ipairs(feed:GetChildren()) do
@@ -815,16 +849,25 @@ local function subText(entry)
 	return table.concat(parts, " • ")
 end
 
+local function addPlaceholder(text)
+	local f = new("Frame", {
+		Name = "Placeholder",
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 52),
+		BackgroundTransparency = 1,
+	}, feed)
+	label(f, text, 12, FONT_MED, MUTED, UDim2.new(), UDim2.fromScale(1, 1), Enum.TextXAlignment.Center)
+end
+
 local function addRow(data, order)
 	local row = new("Frame", {
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, 52),
 		BackgroundColor3 = WHITE,
-		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
 	}, feed)
 	corner(row, 8)
-	gradient(row, Color3.fromRGB(18, 28, 50), Color3.fromRGB(8, 12, 22), 0)
+	gradient(row, Color3.fromRGB(14, 22, 42), Color3.fromRGB(6, 9, 16), 0)
 	accentStroke(row, 1, 0.45)
 
 	local bar = new("Frame", {
@@ -844,32 +887,21 @@ local function addRow(data, order)
 		ScaleType = Enum.ScaleType.Fit,
 	}, row)
 
+	-- tombol di kanan, jarak sama (6): FORCE | JOIN | BL
 	local title = label(row, "", 15, FONT_BOLD, WHITE,
-		UDim2.fromOffset(62, 5), UDim2.new(1, -190, 0, 22))
+		UDim2.fromOffset(62, 5), UDim2.new(1, -206, 0, 22))
 	title.RichText = true
 	title.TextScaled = true
-	new("UITextSizeConstraint", { MaxTextSize = 15, MinTextSize = 9 }, title)
+	new("UITextSizeConstraint", { MaxTextSize = 15, MinTextSize = 8 }, title)
 	title.Text = ("%s  <font color=\"rgb(90,170,255)\">[ %s ]</font>"):format(
 		escapeRich(data.name), formatValue(data.value))
 
 	local sub = label(row, "", 10, FONT_BOLD, SUB_TEXT,
-		UDim2.fromOffset(62, 28), UDim2.new(1, -190, 0, 14))
+		UDim2.fromOffset(62, 28), UDim2.new(1, -206, 0, 14))
 	sub.RichText = true
 	sub.TextTruncate = Enum.TextTruncate.AtEnd
 	sub.Text = subText(data)
 	table.insert(ageLabels, { label = sub, entry = data })
-
-	local join = button(row, {
-		text = "JOIN",
-		textSize = 8,
-		anchor = Vector2.new(1, 0.5),
-		pos = UDim2.new(1, -70, 0.5, 0),
-		size = UDim2.fromOffset(42, 24),
-		c0 = ACCENT,
-		c1 = ACCENT_DARK,
-		strokeColor = ACCENT_HI,
-		strokeTransparency = 0.2,
-	})
 
 	local canForce = autoForceState
 	local selected = canForce and forceKey == data.key
@@ -878,10 +910,10 @@ local function addRow(data, order)
 		fc0, fc1, ftext = ACCENT_HI, ACCENT, WHITE
 		fstroke, fstrokeT = WHITE, 0.3
 	elseif canForce then
-		fc0, fc1, ftext = Color3.fromRGB(20, 35, 70), Color3.fromRGB(10, 16, 30), WHITE
+		fc0, fc1, ftext = Color3.fromRGB(20, 35, 70), Color3.fromRGB(8, 14, 28), WHITE
 		fstroke, fstrokeT = ACCENT, 0.2
 	else
-		fc0, fc1, ftext = Color3.fromRGB(28, 32, 40), Color3.fromRGB(18, 20, 26), Color3.fromRGB(80, 90, 110)
+		fc0, fc1, ftext = Color3.fromRGB(24, 28, 36), Color3.fromRGB(14, 16, 22), Color3.fromRGB(80, 90, 110)
 		fstroke, fstrokeT = nil, nil
 	end
 	local force = button(row, {
@@ -889,12 +921,37 @@ local function addRow(data, order)
 		textSize = 8,
 		textColor = ftext,
 		anchor = Vector2.new(1, 0.5),
-		pos = UDim2.new(1, -10, 0.5, 0),
-		size = UDim2.fromOffset(40, 24),
+		pos = UDim2.new(1, -8, 0.5, 0),
+		size = UDim2.fromOffset(46, 26),
 		c0 = fc0,
 		c1 = fc1,
 		strokeColor = fstroke,
 		strokeTransparency = fstrokeT,
+		radius = 6,
+	})
+	local join = button(row, {
+		text = "JOIN",
+		textSize = 9,
+		anchor = Vector2.new(1, 0.5),
+		pos = UDim2.new(1, -60, 0.5, 0),
+		size = UDim2.fromOffset(46, 26),
+		c0 = ACCENT,
+		c1 = ACCENT_DARK,
+		strokeColor = ACCENT_HI,
+		strokeTransparency = 0.2,
+		radius = 6,
+	})
+	local blBtn = button(row, {
+		text = "BL",
+		textSize = 9,
+		anchor = Vector2.new(1, 0.5),
+		pos = UDim2.new(1, -112, 0.5, 0),
+		size = UDim2.fromOffset(32, 26),
+		c0 = Color3.fromRGB(30, 44, 80),
+		c1 = Color3.fromRGB(12, 18, 34),
+		strokeColor = ACCENT,
+		strokeTransparency = 0.35,
+		radius = 6,
 	})
 
 	join.MouseButton1Click:Connect(function()
@@ -911,28 +968,16 @@ local function addRow(data, order)
 		render()
 	end)
 
-	local blBtn = button(row, {
-		text = "BL",
-		textSize = 8,
-		anchor = Vector2.new(1, 0.5),
-		pos = UDim2.new(1, -116, 0.5, 0),
-		size = UDim2.fromOffset(26, 24),
-		c0 = Color3.fromRGB(40, 50, 80),
-		c1 = Color3.fromRGB(20, 25, 40),
-		strokeColor = ACCENT,
-		strokeTransparency = 0.35,
-	})
 	blBtn.MouseButton1Click:Connect(function()
-		if data.name and data.name \~= "" then
+		if data.name and data.name ~= "" then
 			blacklist[data.name] = true
 			saveBlacklist()
-			statusLabel.Text = "Blacklisted: " .. tostring(data.name):sub(1, 16)
+			statusLabel.Text = "Blacklisted: " .. tostring(data.name):sub(1, 12)
 			render()
 		end
 	end)
 
 	if blacklistMode then
-		row.BackgroundTransparency = 0
 		local pick = new("TextButton", {
 			AutoButtonColor = false,
 			Text = "TAP TO BLACKLIST",
@@ -940,17 +985,19 @@ local function addRow(data, order)
 			Font = FONT_BOLD,
 			TextColor3 = WHITE,
 			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(30, 80, 180),
-			BackgroundTransparency = 0.35,
+			BackgroundColor3 = Color3.fromRGB(20, 60, 150),
+			BackgroundTransparency = 0.3,
 			ZIndex = 5,
 			BorderSizePixel = 0,
 		}, row)
+		corner(pick, 8)
 		pick.MouseButton1Click:Connect(function()
-			if data.name and data.name \~= "" then
+			if data.name and data.name ~= "" then
 				blacklist[data.name] = true
 				saveBlacklist()
 				blacklistMode = false
-				statusLabel.Text = "Blacklisted: " .. tostring(data.name):sub(1, 16)
+				blModeBtn.Text = "Blacklist"
+				statusLabel.Text = "Blacklisted: " .. tostring(data.name):sub(1, 12)
 				render()
 			end
 		end)
@@ -978,12 +1025,21 @@ function render()
 		end
 	end
 	detectedLabel.Text = shown .. " detected"
+	if shown == 0 then
+		if feedState == "loading" then
+			addPlaceholder("Memuat data pet...")
+		elseif feedState == "error" then
+			addPlaceholder("Gagal terhubung, mencoba lagi...")
+		else
+			addPlaceholder("Belum ada pet terdeteksi")
+		end
+	end
 	feed.CanvasPosition = scroll
 
 	if autoJoinState and #latest > 0 then
 		for _, e in ipairs(latest) do
 			local jid = tostring(e.jobId)
-			if not hidden[keyOf(e)] and not isBlacklisted(e) and jid \~= tostring(game.JobId) and jid \~= lastAutoJoinJob then
+			if not hidden[keyOf(e)] and not isBlacklisted(e) and jid ~= tostring(game.JobId) and jid ~= lastAutoJoinJob then
 				lastAutoJoinJob = jid
 				joinServer(jid)
 				break
@@ -1034,7 +1090,6 @@ end)
 copyBtn.MouseButton1Click:Connect(function()
 	local fn = setclipboard or toclipboard
 	local ok = fn and pcall(fn, DISCORD_LINK)
-	local token = tick()
 	copyBtn.Text = ok and "Copied!" or "Failed"
 	if not ok then
 		warn("[" .. TITLE .. "] Clipboard not supported. Link: " .. DISCORD_LINK)
@@ -1053,7 +1108,7 @@ local function fetchPets()
 	local ok, decoded = pcall(function()
 		return HttpService:JSONDecode(body)
 	end)
-	if not ok or type(decoded) \~= "table" then return false end
+	if not ok or type(decoded) ~= "table" then return false end
 
 	local list = {}
 	for _, p in ipairs(decoded) do
@@ -1085,7 +1140,7 @@ local postedAt = {}
 local postOk, postFail, scanCount, lastPostStatus = 0, 0, 0, "-"
 local postPauseUntil = 0
 
-local VALUE_PATTERN = "^%s*%\( ?%s*([%d%.,]+)%s*([KkMmBbTt]?)%s*/%s*[sS]%s* \)"
+local VALUE_PATTERN = "^%s*%$?%s*([%d%.,]+)%s*([KkMmBbTt]?)%s*/%s*[sS]%s*$"
 local UNIT_MUL = { K = 1e3, M = 1e6, B = 1e9, T = 1e12 }
 
 local function parseValue(text)
@@ -1168,8 +1223,36 @@ local function httpPost(url, body)
 	return nil, tostring(res)
 end
 
+-- ─── TAMPILKAN UI SEKARANG, data menyusul di latar belakang ────────────────
+render() -- tampilkan placeholder "Memuat data pet..."
+setProgress(1, "Siap!")
+TweenService:Create(loading, TweenInfo.new(0.25), { GroupTransparency = 1 }):Play()
+task.delay(0.3, function()
+	if loading then loading:Destroy() end
+end)
+
 -- ─── LOOPS ─────────────────────────────────────────────────────────────────
+-- ambil data (UI sudah terlihat, jadi tidak ada layar kosong saat menunggu)
 task.spawn(function()
+	while gui.Parent do
+		local ok = fetchPets()
+		if ok then
+			feedState = "ready"
+			if statusLabel.Text == "Memuat data..." or statusLabel.Text == "Disconnected" then
+				statusLabel.Text = "Connected"
+			end
+		else
+			feedState = (#latest == 0) and "error" or "ready"
+			statusLabel.Text = "Disconnected"
+		end
+		render()
+		task.wait(REFRESH_INTERVAL)
+	end
+end)
+
+-- scan + post (ditunda sebentar supaya tidak membebani saat UI baru muncul)
+task.spawn(function()
+	task.wait(POST_FIRST_DELAY)
 	while gui.Parent do
 		if not AUTO_POST or game.JobId == "" then
 			postLabel.Text = "Post: off"
@@ -1221,26 +1304,5 @@ task.spawn(function()
 			end
 		end
 		task.wait(1)
-	end
-end)
-
-task.spawn(function()
-	-- first fetch + show UI as soon as possible
-	loadStatus.Text = "Fetching pets..."
-	local ok = fetchPets()
-	statusLabel.Text = ok and "Connected" or "Disconnected"
-	if ok then render() end
-
-	-- reveal UI
-	main.Visible = true
-	TweenService:Create(loading, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
-	task.wait(0.28)
-	loading:Destroy()
-
-	while gui.Parent do
-		ok = fetchPets()
-		statusLabel.Text = ok and "Connected" or "Disconnected"
-		if ok then render() end
-		task.wait(REFRESH_INTERVAL)
 	end
 end)
